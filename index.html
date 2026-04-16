@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory • Google-style</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/babel-standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500&amp;display=swap');
+        
+        :root {
+            --tw-color-primary: #1a73e8;
+        }
+        
+        * {
+            font-family: "Google Sans", system-ui, -apple-system, sans-serif;
+        }
+        
+        .modal {
+            animation: modalPop 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        @keyframes modalPop {
+            0% { transform: scale(0.95); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        
+        .table-row {
+            transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .fab {
+            box-shadow: 0 4px 10px -2px rgb(26 115 232 / 0.3);
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="root" class="min-h-screen"></div>
+
+    <script type="text/babel">
+        const { createElement, useState, useEffect, Fragment } = React
+
+        function App() {
+            // Tailwind script already loaded in head
+            useEffect(() => {
+                return () => {
+                    // Initialize Tailwind
+                    return window.tailwindConfig = () => {
+                        return {
+                            theme: { extend: {} },
+                            content: []
+                        }
+                    }
+                }
+            }, [])
+
+            const [items, setItems] = React.useState([])
+            const [formData, setFormData] = React.useState({
+                name: '',
+                quantity: '',
+                priceBeforeTax: '',
+                taxAmount: '',
+                date: new Date().toISOString().split('T')[0]
+            })
+            const [editingId, setEditingId] = React.useState(null)
+            const [searchTerm, setSearchTerm] = React.useState('')
+            const [showModal, setShowModal] = React.useState(false)
+            const [sortField, setSortField] = React.useState('date')
+            const [sortDirection, setSortDirection] = React.useState('desc')
+
+            // Load from localStorage
+            useEffect(() => {
+                const savedItems = localStorage.getItem('googleInventory')
+                if (savedItems) {
+                    setItems(JSON.parse(savedItems))
+                }
+            }, [])
+
+            // Save to localStorage
+            useEffect(() => {
+                localStorage.setItem('googleInventory', JSON.stringify(items))
+            }, [items])
+
+            const calculateTotalValue = (qty, preTax, tax) => {
+                return (parseFloat(qty) || 0) * ((parseFloat(preTax) || 0) + (parseFloat(tax) || 0))
+            }
+
+            const handleSubmit = (e) => {
+                e.preventDefault()
+                
+                if (!formData.name.trim()) {
+                    alert("Item name is required")
+                    return
+                }
+
+                const qty = parseFloat(formData.quantity) || 0
+                const preTax = parseFloat(formData.priceBeforeTax) || 0
+                const tax = parseFloat(formData.taxAmount) || 0
+                
+                if (qty <= 0) {
+                    alert("Quantity must be greater than 0")
+                    return
+                }
+
+                const newItem = {
+                    id: editingId || Date.now().toString(36) + Math.random().toString(36).substr(2),
+                    name: formData.name.trim(),
+                    quantity: qty,
+                    priceBeforeTax: preTax,
+                    taxAmount: tax,
+                    date: formData.date,
+                    totalValue: calculateTotalValue(qty, preTax, tax),
+                    lastUpdated: new Date().toISOString()
+                }
+
+                if (editingId) {
+                    setItems(prev => prev.map(item => 
+                        item.id === editingId ? newItem : item
+                    ))
+                } else {
+                    setItems(prev => [...prev, newItem])
+                }
+
+                // Reset form
+                setFormData({
+                    name: '',
+                    quantity: '',
+                    priceBeforeTax: '',
+                    taxAmount: '',
+                    date: new Date().toISOString().split('T')[0]
+                })
+                setEditingId(null)
+                setShowModal(false)
+                
+                // Subtle success feedback (Google-style)
+                const toast = document.createElement('div')
+                toast.style.cssText = 'position:fixed; bottom:24px; right:24px; background:#1a73e8; color:white; padding:12px 24px; border-radius:9999px; box-shadow:0 4px 12px -2px rgb(26 115 232); display:flex; align-items:center; gap:8px; animation:slideUp 0.3s ease forwards;'
+                toast.innerHTML = `✅ ${editingId ? 'Updated' : 'Added'} successfully`
+                document.body.appendChild(toast)
+                setTimeout(() => toast.remove(), 2500)
+            }
+
+            const handleEdit = (item) => {
+                setFormData({
+                    name: item.name,
+                    quantity: item.quantity.toString(),
+                    priceBeforeTax: item.priceBeforeTax.toString(),
+                    taxAmount: item.taxAmount.toString(),
+                    date: item.date
+                })
+                setEditingId(item.id)
+                setShowModal(true)
+            }
+
+            const handleDelete = (id) => {
+                if (confirm('Delete this item? This cannot be undone.')) {
+                    setItems(prev => prev.filter(item => item.id !== id))
+                }
+            }
+
+            // Filter + sort
+            const filteredAndSortedItems = React.useMemo(() => {
+                let result = items.filter(item =>
+                    item.name.toLowerCase().includes(searchTerm.toLowerCase())
+                )
+
+                result.sort((a, b) => {
+                    let valA = a[sortField]
+                    let valB = b[sortField]
+                    
+                    if (sortField === 'date') {
+                        valA = new Date(valA)
+                        valB = new Date(valB)
+                    }
+                    
+                    if (valA < valB) return sortDirection === 'asc' ? -1 : 1
+                    if (valA > valB) return sortDirection === 'asc' ? 1 : -1
+                    return 0
+                })
+                
+                return result
+            }, [items, searchTerm, sortField, sortDirection])
+
+            // Summary stats
+            const totalItems = items.length
+            const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0)
+            const totalValue = items.reduce((sum, item) => sum + item.totalValue, 0)
+
+            return createElement('div', { className: "min-h-screen bg-gray-50" },
+                // Top app bar - Google style
+                createElement('header', {
+                    className: "bg-[#1a73e8] text-white shadow-sm sticky top-0 z-50"
+                },
+                    createElement('div', {
+                        className: "max-w-screen-2xl mx-auto px-8 py-5 flex items-center justify-between"
+                    },
+                        createElement('div', { className: "flex items-center gap-x-3" },
+                            createElement('div', {
+                                className: "w-9 h-9 bg-white rounded-2xl flex items-center justify-center text-[#1a73e8] text-2xl shadow-inner"
+                            }, "📦"),
+                            createElement('h1', {
+                                className: "text-2xl font-medium tracking-[-0.5px]"
+                            }, "Inventory")
+                        ),
+                        
+                        // Search bar (Google-style)
+                        createElement('div', {
+                            className: "flex-1 max-w-xl mx-8"
+                        },
+                            createElement('div', {
+                                className: "relative"
+                            },
+                                createElement('input', {
+                                    type: "text",
+                                    placeholder: "Search inventory…",
+                                    value: searchTerm,
+                                    onChange: (e) => setSearchTerm(e.target.value),
+                                    className: "w-full bg-white text-gray-900 placeholder:text-gray-400 rounded-3xl py-3 pl-12 pr-6 text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-white/50 transition-all"
+                                }),
+                                createElement('div', {
+                                    className: "absolute left-5 top-1/2 -translate-y-1/2 text-gray-400"
+                                }, "🔎")
+                            )
+                        ),
+                        
+                        createElement('div', { className: "flex items-center gap-x-2" },
+                            createElement('div', {
+                                className: "text-sm font-medium px-4 py-2 bg-white/10 hover:bg-white/20 rounded-3xl cursor-pointer transition-colors flex items-center gap-x-1"
+                            },
+                                createElement('span', {}, "Today"),
+                                createElement('span', { className: "text-xs bg-white/20 px-2.5 py-px rounded-3xl" }, new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))
+                            ),
+                            createElement('div', {
+                                className: "w-9 h-9 bg-white/10 hover:bg-white/20 rounded-2xl flex items-center justify-center cursor-pointer transition-colors text-xl"
+                            }, "👤")
+                        )
+                    )
+                ),
+
+                createElement('div', { className: "max-w-screen-2xl mx-auto px-8 pt-8 pb-12" },
+                    
+                    // Summary cards – Google Material 3 style
+                    createElement('div', {
+                        className: "grid grid-cols-1 sm:grid-cols-3 gap-6 mb-10"
+                    },
+                        // Card 1
+                        createElement('div', {
+                            className: "bg-white rounded-3xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all"
+                        },
+                            createElement('div', { className: "flex justify-between" },
+                                createElement('div', {},
+                                    createElement('p', { className: "text-sm text-gray-500 font-medium" }, "TOTAL ITEMS"),
+                                    createElement('p', { className: "text-5xl font-semibold text-gray-900 mt-2" }, totalItems)
+                                ),
+                                createElement('div', { className: "text-5xl" }, "📋")
+                            )
+                        ),
+                        
+                        // Card 2
+                        createElement('div', {
+                            className: "bg-white rounded-3xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all"
+                        },
+                            createElement('div', { className: "flex justify-between" },
+                                createElement('div', {},
+                                    createElement('p', { className: "text-sm text-gray-500 font-medium" }, "TOTAL QUANTITY"),
+                                    createElement('p', { className: "text-5xl font-semibold text-gray-900 mt-2" }, totalQuantity)
+                                ),
+                                createElement('div', { className: "text-5xl" }, "📦")
+                            )
+                        ),
+                        
+                        // Card 3
+                        createElement('div', {
+                            className: "bg-white rounded-3xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-all"
+                        },
+                            createElement('div', { className: "flex justify-between" },
+                                createElement('div', {},
+                                    createElement('p', { className: "text-sm text-gray-500 font-medium" }, "TOTAL VALUE"),
+                                    createElement('p', { className: "text-5xl font-semibold text-gray-900 mt-2" }, 
+                                        "$" + totalValue.toFixed(2)
+                                    )
+                                ),
+                                createElement('div', { className: "text-5xl" }, "💰")
+                            )
+                        )
+                    ),
+
+                    // Table header + FAB
+                    createElement('div', {
+                        className: "flex items-center justify-between mb-6"
+                    },
+                        createElement('h2', {
+                            className: "text-xl font-medium text-gray-700"
+                        }, `Items (${filteredAndSortedItems.length})`),
+                        
+                        // Google-style FAB
+                        createElement('button', {
+                            onClick: () => {
+                                setEditingId(null)
+                                setFormData({
+                                    name: '',
+                                    quantity: '',
+                                    priceBeforeTax: '',
+                                    taxAmount: '',
+                                    date: new Date().toISOString().split('T')[0]
+                                })
+                                setShowModal(true)
+                            },
+                            className: "fab flex items-center gap-x-2 bg-[#1a73e8] hover:bg-[#185abc] text-white text-lg font-medium px-8 h-12 rounded-3xl transition-all active:scale-95 shadow-lg"
+                        },
+                            createElement('span', { className: "text-2xl leading-none" }, "+"),
+                            "Add item"
+                        )
+                    ),
+
+                    // Data table – clean Material style
+                    createElement('div', {
+                        className: "bg-white rounded-3xl shadow-sm overflow-hidden border border-gray-100"
+                    },
+                        createElement('table', { className: "w-full" },
+                            createElement('thead', {},
+                                createElement('tr', { className: "border-b border-gray-100" },
+                                    createElement('th', {
+                                        className: "px-8 py-5 text-left text-sm font-medium text-gray-500 cursor-pointer hover:text-gray-700",
+                                        onClick: () => {
+                                            if (sortField === 'name') {
+                                                setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+                                            } else {
+                                                setSortField('name')
+                                                setSortDirection('asc')
+                                            }
+                                        }
+                                    }, 
+                                        createElement('div', { className: "flex items-center gap-x-1" },
+                                            "Item",
+                                            sortField === 'name' && (sortDirection === 'asc' ? ' ↑' : ' ↓')
+                                        )
+                                    ),
+                                    createElement('th', {
+                                        className: "px-8 py-5 text-left text-sm font-medium text-gray-500 cursor-pointer hover:text-gray-700",
+                                        onClick: () => {
+                                            if (sortField === 'quantity') {
+                                                setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+                                            } else {
+                                                setSortField('quantity')
+                                                setSortDirection('desc')
+                                            }
+                                        }
+                                    }, 
+                                        createElement('div', { className: "flex items-center gap-x-1" },
+                                            "Qty",
+                                            sortField === 'quantity' && (sortDirection === 'asc' ? ' ↑' : ' ↓')
+                                        )
+                                    ),
+                                    createElement('th', {
+                                        className: "px-8 py-5 text-left text-sm font-medium text-gray-500 cursor-pointer hover:text-gray-700",
+                                        onClick: () => {
+                                            if (sortField === 'priceBeforeTax') {
+                                                setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+                                            } else {
+                                                setSortField('priceBeforeTax')
+                                                setSortDirection('desc')
+                                            }
+                                        }
+                                    }, "Price before tax"),
+                                    createElement('th', {
+                                        className: "px-8 py-5 text-left text-sm font-medium text-gray-500 cursor-pointer hover:text-gray-700",
+                                        onClick: () => {
+                                            if (sortField === 'taxAmount') {
+                                                setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+                                            } else {
+                                                setSortField('taxAmount')
+                                                setSortDirection('desc')
+                                            }
+                                        }
+                                    }, "Tax amount"),
+                                    createElement('th', {
+                                        className: "px-8 py-5 text-left text-sm font-medium text-gray-500 cursor-pointer hover:text-gray-700",
+                                        onClick: () => {
+                                            if (sortField === 'date') {
+                                                setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+                                            } else {
+                                                setSortField('date')
+                                                setSortDirection('desc')
+                                            }
+                                        }
+                                    }, 
+                                        createElement('div', { className: "flex items-center gap-x-1" },
+                                            "Purchased",
+                                            sortField === 'date' && (sortDirection === 'asc' ? ' ↑' : ' ↓')
+                                        )
+                                    ),
+                                    createElement('th', {
+                                        className: "px-8 py-5 text-right text-sm font-medium text-gray-500"
+                                    }, "Total value"),
+                                    createElement('th', { className: "w-20 px-8 py-5" })
+                                )
+                            ),
+                            createElement('tbody', { className: "divide-y divide-gray-100" },
+                                filteredAndSortedItems.length === 0 
+                                    ? createElement('tr', {},
+                                        createElement('td', {
+                                            colSpan: 7,
+                                            className: "px-8 py-16 text-center"
+                                        },
+                                            createElement('div', { className: "mx-auto w-16 h-16 bg-gray-100 rounded-3xl flex items-center justify-center text-4xl mb-4" }, "📦"),
+                                            createElement('p', { className: "text-gray-400 font-medium" }, "No items yet"),
+                                            createElement('p', { className: "text-gray-400 text-sm mt-1" }, "Add your first inventory item using the button above")
+                                        )
+                                    )
+                                    : filteredAndSortedItems.map(item => 
+                                        createElement('tr', {
+                                            key: item.id,
+                                            className: "table-row hover:bg-gray-50"
+                                        },
+                                            createElement('td', { className: "px-8 py-5 font-medium text-gray-900" }, item.name),
+                                            createElement('td', { className: "px-8 py-5" }, 
+                                                createElement('span', { className: "inline-flex items-center px-3 py-1 bg-blue-50 text-blue-700 rounded-3xl text-sm font-medium" }, 
+                                                    item.quantity
+                                                )
+                                            ),
+                                            createElement('td', { className: "px-8 py-5 text-gray-600" }, 
+                                                "$" + item.priceBeforeTax.toFixed(2)
+                                            ),
+                                            createElement('td', { className: "px-8 py-5 text-gray-600" }, 
+                                                "$" + item.taxAmount.toFixed(2)
+                                            ),
+                                            createElement('td', { className: "px-8 py-5 text-gray-600" }, 
+                                                new Date(item.date).toLocaleDateString('en-US', {
+                                                    month: 'short',
+                                                    day: 'numeric',
+                                                    year: 'numeric'
+                                                })
+                                            ),
+                                            createElement('td', { className: "px-8 py-5 text-right font-semibold text-gray-900" }, 
+                                                "$" + item.totalValue.toFixed(2)
+                                            ),
+                                            createElement('td', { className: "px-8 py-5" },
+                                                createElement('div', { className: "flex gap-x-1" },
+                                                    createElement('button', {
+                                                        onClick: () => handleEdit(item),
+                                                        className: "w-8 h-8 flex items-center justify-center text-gray-400 hover:text-[#1a73e8] hover:bg-blue-50 rounded-2xl transition-colors"
+                                                    }, "✏️"),
+                                                    createElement('button', {
+                                                        onClick: () => handleDelete(item.id),
+                                                        className: "w-8 h-8 flex items-center justify-center text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-2xl transition-colors"
+                                                    }, "🗑️")
+                                                )
+                                            )
+                                        )
+                                    )
+                            )
+                        )
+                    )
+                ),
+
+                // Modal – Google Material 3 dialog
+                showModal && createElement('div', {
+                    className: "fixed inset-0 bg-black/60 flex items-center justify-center z-[9999] p-4"
+                },
+                    createElement('div', {
+                        className: "modal bg-white rounded-3xl max-w-lg w-full shadow-2xl overflow-hidden"
+                    },
+                        createElement('div', { className: "px-8 pt-8 pb-2" },
+                            createElement('h2', {
+                                className: "text-2xl font-medium"
+                            }, editingId ? "Edit item" : "Add new item"),
+                            
+                            createElement('form', {
+                                onSubmit: handleSubmit,
+                                className: "mt-8 space-y-8"
+                            },
+                                // Item name
+                                createElement('div', {},
+                                    createElement('label', {
+                                        className: "block text-sm font-medium text-gray-500 mb-2"
+                                    }, "ITEM NAME"),
+                                    createElement('input', {
+                                        type: "text",
+                                        required: true,
+                                        value: formData.name,
+                                        onChange: (e) => setFormData({...formData, name: e.target.value}),
+                                        className: "w-full rounded-3xl border border-gray-200 focus:border-[#1a73e8] px-6 py-5 text-lg outline-none transition-colors"
+                                    })
+                                ),
+                                
+                                // Three-column inputs
+                                createElement('div', {
+                                    className: "grid grid-cols-3 gap-6"
+                                },
+                                    createElement('div', {},
+                                        createElement('label', { className: "block text-sm font-medium text-gray-500 mb-2" }, "QUANTITY"),
+                                        createElement('input', {
+                                            type: "number",
+                                            min: "1",
+                                            step: "1",
+                                            required: true,
+                                            value: formData.quantity,
+                                            onChange: (e) => setFormData({...formData, quantity: e.target.value}),
+                                            className: "w-full rounded-3xl border border-gray-200 focus:border-[#1a73e8] px-6 py-5 text-lg outline-none transition-colors"
+                                        })
+                                    ),
+                                    createElement('div', {},
+                                        createElement('label', { className: "block text-sm font-medium text-gray-500 mb-2" }, "PRICE BEFORE TAX"),
+                                        createElement('div', { className: "relative" },
+                                            createElement('span', { className: "absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 text-xl" }, "$"),
+                                            createElement('input', {
+                                                type: "number",
+                                                min: "0",
+                                                step: "0.01",
+                                                required: true,
+                                                value: formData.priceBeforeTax,
+                                                onChange: (e) => setFormData({...formData, priceBeforeTax: e.target.value}),
+                                                className: "w-full rounded-3xl border border-gray-200 focus:border-[#1a73e8] pl-10 pr-6 py-5 text-lg outline-none transition-colors"
+                                            })
+                                        )
+                                    ),
+                                    createElement('div', {},
+                                        createElement('label', { className: "block text-sm font-medium text-gray-500 mb-2" }, "TAX AMOUNT"),
+                                        createElement('div', { className: "relative" },
+                                            createElement('span', { className: "absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 text-xl" }, "$"),
+                                            createElement('input', {
+                                                type: "number",
+                                                min: "0",
+                                                step: "0.01",
+                                                required: true,
+                                                value: formData.taxAmount,
+                                                onChange: (e) => setFormData({...formData, taxAmount: e.target.value}),
+                                                className: "w-full rounded-3xl border border-gray-200 focus:border-[#1a73e8] pl-10 pr-6 py-5 text-lg outline-none transition-colors"
+                                            })
+                                        )
+                                    )
+                                ),
+                                
+                                // Date
+                                createElement('div', {},
+                                    createElement('label', {
+                                        className: "block text-sm font-medium text-gray-500 mb-2"
+                                    }, "DATE PURCHASED"),
+                                    createElement('input', {
+                                        type: "date",
+                                        required: true,
+                                        value: formData.date,
+                                        onChange: (e) => setFormData({...formData, date: e.target.value}),
+                                        className: "w-full rounded-3xl border border-gray-200 focus:border-[#1a73e8] px-6 py-5 text-lg outline-none transition-colors"
+                                    })
+                                ),
+                                
+                                // Footer actions
+                                createElement('div', {
+                                    className: "flex gap-x-4 pt-6 border-t"
+                                },
+                                    createElement('button', {
+                                        type: "button",
+                                        onClick: () => setShowModal(false),
+                                        className: "flex-1 py-5 text-gray-700 font-medium rounded-3xl border border-gray-200 hover:bg-gray-50 transition-colors"
+                                    }, "Cancel"),
+                                    createElement('button', {
+                                        type: "submit",
+                                        className: "flex-1 py-5 bg-[#1a73e8] hover:bg-[#185abc] text-white font-medium rounded-3xl transition-all active:scale-[0.97]"
+                                    }, editingId ? "Update item" : "Add to inventory")
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        }
+
+        // Render the app
+        const root = ReactDOM.createRoot(document.getElementById('root'))
+        root.render(
+            React.createElement(
+                React.StrictMode,
+                null,
+                React.createElement(App)
+            )
+        )
+    </script>
+</body>
+</html>
