@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       pages: write
-      contents: read
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -19,6 +19,7 @@ jobs:
       - name: Deploy site to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           branch: gh-pages
           folder: .
           clean: true
