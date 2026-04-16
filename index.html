@@ -98,7 +98,7 @@
 
             // Auth state listener
             useEffect(() => {
-                const unsubscribe = onAuthStateChanged(window.auth, (currentUser) => {
+                const unsubscribe = window.onAuthStateChanged(window.auth, (currentUser) => {
                     setUser(currentUser)
                     setLoading(false)
                 })
@@ -116,8 +116,8 @@
 
             const loadItems = async () => {
                 try {
-                    const q = query(collection(window.db, 'items'), where('userId', '==', user.uid))
-                    const querySnapshot = await getDocs(q)
+                    const q = window.query(window.collection(window.db, 'items'), window.where('userId', '==', user.uid))
+                    const querySnapshot = await window.getDocs(q)
                     const loadedItems = []
                     querySnapshot.forEach((doc) => {
                         loadedItems.push({ id: doc.id, ...doc.data() })
@@ -136,9 +136,9 @@
                 e.preventDefault()
                 try {
                     if (authMode === 'login') {
-                        await signInWithEmailAndPassword(window.auth, authForm.email, authForm.password)
+                        await window.signInWithEmailAndPassword(window.auth, authForm.email, authForm.password)
                     } else {
-                        await createUserWithEmailAndPassword(window.auth, authForm.email, authForm.password)
+                        await window.createUserWithEmailAndPassword(window.auth, authForm.email, authForm.password)
                     }
                     setAuthForm({ email: '', password: '' })
                 } catch (error) {
@@ -147,7 +147,7 @@
             }
 
             const handleLogout = async () => {
-                await signOut(window.auth)
+                await window.signOut(window.auth)
             }
 
             const calculateTotalValue = (qty, preTax, tax) => {
@@ -184,12 +184,12 @@
 
                 try {
                     if (editingId) {
-                        await updateDoc(doc(window.db, 'items', editingId), newItem)
+                        await window.updateDoc(window.doc(window.db, 'items', editingId), newItem)
                         setItems(prev => prev.map(item => 
                             item.id === editingId ? { id: editingId, ...newItem } : item
                         ))
                     } else {
-                        const docRef = await addDoc(collection(window.db, 'items'), newItem)
+                        const docRef = await window.addDoc(window.collection(window.db, 'items'), newItem)
                         setItems(prev => [...prev, { id: docRef.id, ...newItem }])
                     }
 
@@ -230,7 +230,7 @@
             const handleDelete = async (id) => {
                 if (confirm('Delete this item? This cannot be undone.')) {
                     try {
-                        await deleteDoc(doc(window.db, 'items', id))
+                        await window.deleteDoc(window.doc(window.db, 'items', id))
                         setItems(prev => prev.filter(item => item.id !== id))
                     } catch (error) {
                         alert('Error deleting item: ' + error.message)
